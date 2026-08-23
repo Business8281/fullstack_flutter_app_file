@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+    
+    function isPractitioner() {
+      return isAuthenticated() && getUserRole() == 'practitioner';
+    }
+    
+    function isUser() {
+      return isAuthenticated() && getUserRole() == 'user';
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+    
+    // Practitioners collection
+    match /practitioners/{practitionerId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(practitionerId) && isPractitioner();
+      allow update: if isOwner(practitionerId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Assessments collection
+    match /assessments/{assessmentId} {
+      allow read: if isAuthenticated() && 
+                     (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+    
+    // Bookings collection
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated() && 
+                     (resource.data.userId == request.auth.uid || 
+                      resource.data.practitionerId == request.auth.uid ||
+                      isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && 
+                       (resource.data.userId == request.auth.uid || 
+                        resource.data.practitionerId == request.auth.uid ||
+                        isAdmin());
+      allow delete: if isAdmin();
+    }
+    
+    // Availability collection
+    match /availability/{availabilityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isPractitioner();
+      allow update: if isAuthenticated() && 
+                       (resource.data.practitionerId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && 
+                       (resource.data.practitionerId == request.auth.uid || isAdmin());
+    }
+    
+    // Audio Library collection (public read)
+    match /audio_library/{audioId} {
+      allow read: if true; // Public read for free content
+      allow write: if isAdmin();
+    }
+    
+    // Reviews collection
+    match /reviews/{reviewId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+  }
+}
